@@ -18,7 +18,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure Xcode 16
+      - name: Setup Xcode 16 Toolchain
         run: |
           if [ -d "/Applications/Xcode_16.2.app" ]; then
             sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
@@ -27,7 +27,10 @@ jobs:
           elif [ -d "/Applications/Xcode_16.0.app" ]; then
             sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
           fi
+          sudo xcodebuild -license accept
+          sudo xcodebuild -runFirstLaunch
           xcodebuild -version
+          xcodebuild -list -project ChatApp-main.xcodeproj
 
       - name: Resolve Swift Packages
         run: |
@@ -35,7 +38,7 @@ jobs:
             -project ChatApp-main.xcodeproj \
             -scheme ChatApp-main
 
-      - name: Build PeachChat (Generic iOS Target)
+      - name: Build PeachChat
         run: |
           set -o pipefail
           xcodebuild \
@@ -45,4 +48,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build | tee xcodebuild.log
+
+      - name: Diagnostic Output on Failure
+        if: failure()
+        run: |
+          if [ -f xcodebuild.log ]; then
+            echo "=== XCODEBUILD RECENT OUTPUT ==="
+            tail -n 150 xcodebuild.log
+          fi
