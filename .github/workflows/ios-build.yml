@@ -31,39 +31,22 @@ jobs:
           sudo xcodebuild -runFirstLaunch
           xcodebuild -version
 
-      - name: Inspect Available Destinations
-        run: |
-          echo "### Available Destinations" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          xcodebuild -project ChatApp-main.xcodeproj -scheme ChatApp-main -showdestinations >> $GITHUB_STEP_SUMMARY || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
       - name: Resolve Swift Packages
         run: |
           xcodebuild -resolvePackageDependencies \
             -project ChatApp-main.xcodeproj \
             -scheme ChatApp-main
 
-      - name: Build PeachChat
+      - name: Build PeachChat (iOS Simulator)
         run: |
-          set -o pipefail
           xcodebuild \
             -project ChatApp-main.xcodeproj \
             -scheme ChatApp-main \
-            -destination "generic/platform=iOS" \
+            -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tee xcodebuild.log
-
-      - name: Diagnostic Output
-        if: always()
-        run: |
-          echo "### Xcodebuild Log (Tail)" >> $GITHUB_STEP_SUMMARY
-          if [ -f xcodebuild.log ]; then
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 80 xcodebuild.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No xcodebuild.log file was generated." >> $GITHUB_STEP_SUMMARY
-          fi
+            build 2>&1 | tee xcodebuild.log || {
+              echo "=== BUILD FAILED. RELEVANT ERRORS: ==="
+              grep -C 3 -E "(error:|fatal error:|BUILD FAILED)" xcodebuild.log || tail -n 100 xcodebuild.log
+              exit 1
+            }
