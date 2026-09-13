@@ -20,9 +20,6 @@ jobs:
 
       - name: Configure Xcode 16
         run: |
-          echo "Available Xcode installations:"
-          ls -d /Applications/Xcode* || true
-          
           if [ -d "/Applications/Xcode_16.2.app" ]; then
             sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
           elif [ -d "/Applications/Xcode_16.1.app" ]; then
@@ -30,7 +27,6 @@ jobs:
           elif [ -d "/Applications/Xcode_16.0.app" ]; then
             sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
           fi
-          
           xcodebuild -version
 
       - name: Resolve Swift Packages
@@ -39,13 +35,14 @@ jobs:
             -project ChatApp-main.xcodeproj \
             -scheme ChatApp-main
 
-      - name: Build PeachChat (iOS Simulator)
+      - name: Build PeachChat (Generic iOS Target)
         run: |
           set -o pipefail
           xcodebuild \
             -project ChatApp-main.xcodeproj \
             -scheme ChatApp-main \
-            -destination "generic/platform=iOS Simulator" \
+            -destination "generic/platform=iOS" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             build
