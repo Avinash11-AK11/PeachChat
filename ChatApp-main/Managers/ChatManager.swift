@@ -219,7 +219,40 @@ class ChatManager: ObservableObject {
         }
     }
     
-    func sendMessage(_ text: String, to chatId: String, messageType: Message.MessageType = .text) {
+    func createGroupChat(name: String, participantIds: [String]) {
+        guard let currentUserId = _currentUserId else { return }
+        var allParticipants = Array(Set(participantIds + [currentUserId]))
+        
+        let chatId = UUID().uuidString
+        let chat = Chat(
+            id: chatId,
+            participants: allParticipants,
+            isGroupChat: true,
+            groupName: name
+        )
+        
+        do {
+            let data = try JSONEncoder().encode(chat)
+            var dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            dict["lastMessageTime"] = Timestamp(date: Date())
+            dict["lastMessage"] = "Group created"
+            
+            db.collection("chats").document(chatId).setData(dict) { [weak self] error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self?.errorMessage = error.localizedDescription
+                    } else {
+                        self?.chats.insert(chat, at: 0)
+                        self?.currentChat = chat
+                    }
+                }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func sendMessage(_ text: String, to chatId: String, messageType: Message.MessageType = .text, replyToMessage: Message? = nil, replySenderName: String? = nil) {
         guard let currentUserId = _currentUserId else { return }
         
         let messageId = UUID().uuidString
@@ -230,7 +263,10 @@ class ChatManager: ObservableObject {
             senderId: currentUserId,
             chatId: chatId,
             timestamp: timestamp,
-            messageType: messageType
+            messageType: messageType,
+            replyToMessageId: replyToMessage?.id,
+            replyToText: replyToMessage?.text,
+            replyToSenderName: replySenderName
         )
         
         // Optimistic update
@@ -239,7 +275,6 @@ class ChatManager: ObservableObject {
         }
         
         do {
-            // Create Firestore document with proper timestamp
             var messageData: [String: Any] = [
                 "id": messageId,
                 "text": text,
@@ -250,26 +285,116 @@ class ChatManager: ObservableObject {
                 "status": "sent"
             ]
             
+            if let replyId = replyToMessage?.id {
+                messageData["replyToMessageId"] = replyId
+                messageData["replyToText"] = replyToMessage?.text ?? ""
+                messageData["replyToSenderName"] = replySenderName ?? ""
+            }
+            
             db.collection("chats").document(chatId)
                 .collection("messages").document(messageId)
                 .setData(messageData) { [weak self] error in
                     DispatchQueue.main.async {
                         if let error = error {
                             self?.errorMessage = error.localizedDescription
-                            // Remove optimistic message on error
                             if let index = self?.messages.firstIndex(where: { $0.id == messageId }) {
                                 self?.messages.remove(at: index)
                             }
                         } else {
-                            // Update chat's last message
                             self?.updateChatLastMessage(chatId: chatId, message: message)
-                            // Mark as delivered
                             self?.updateMessageStatus(messageId: messageId, in: chatId, status: .delivered)
                         }
                     }
                 }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    func sendAudioMessage(fileUrl: URL, duration: TimeInterval, to chatId: String, replyToMessage: Message? = nil, replySenderName: String? = nil) {
+        guard let currentUserId = _currentUserId else { return }
+        guard let audioData = try? Data(contentsOf: fileUrl) else {
+            errorMessage = "Unable to read recorded audio file"
+            return
+        }
+        
+        let messageId = UUID().uuidString
+        let message = Message(
+            id: messageId,
+            text: "🎤 Voice Message",
+            senderId: currentUserId,
+            chatId: chatId,
+            messageType: .audio,
+            replyToMessageId: replyToMessage?.id,
+            replyToText: replyToMessage?.text,
+            replyToSenderName: replySenderName,
+            mediaUrl: nil,
+            audioDuration: duration
+        )
+        
+        // Optimistic preview
+        DispatchQueue.main.async {
+            self.messages.append(message)
+        }
+        
+        CloudinaryManager.shared.uploadAudio(audioData, folder: "chat_audio") { [weak self] result in
+            switch result {
+            case .success(let audioUrl):
+                self?.saveAudioMessageToFirestore(messageId: messageId, audioUrl: audioUrl, duration: duration, to: chatId, replyToMessage: replyToMessage, replySenderName: replySenderName)
+            case .failure(let error):
+                print("Cloudinary audio upload failed: \(error.localizedDescription)")
+                self?.uploadAudioToFirebaseStorage(audioData: audioData, messageId: messageId, duration: duration, to: chatId, replyToMessage: replyToMessage, replySenderName: replySenderName)
+            }
+        }
+    }
+    
+    private func saveAudioMessageToFirestore(messageId: String, audioUrl: String, duration: TimeInterval, to chatId: String, replyToMessage: Message?, replySenderName: String?) {
+        guard let currentUserId = _currentUserId else { return }
+        var messageData: [String: Any] = [
+            "id": messageId,
+            "text": "🎤 Voice Message",
+            "senderId": currentUserId,
+            "chatId": chatId,
+            "timestamp": Timestamp(date: Date()),
+            "messageType": "audio",
+            "status": "sent",
+            "mediaUrl": audioUrl,
+            "mediaType": "audio",
+            "audioDuration": duration
+        ]
+        
+        if let replyId = replyToMessage?.id {
+            messageData["replyToMessageId"] = replyId
+            messageData["replyToText"] = replyToMessage?.text ?? ""
+            messageData["replyToSenderName"] = replySenderName ?? ""
+        }
+        
+        db.collection("chats").document(chatId)
+            .collection("messages").document(messageId)
+            .setData(messageData) { [weak self] error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self?.errorMessage = error.localizedDescription
+                    } else {
+                        var updatedMsg = Message(id: messageId, text: "🎤 Voice Message", senderId: currentUserId, chatId: chatId, messageType: .audio, mediaUrl: audioUrl, audioDuration: duration)
+                        self?.updateChatLastMessage(chatId: chatId, message: updatedMsg)
+                    }
+                }
+            }
+    }
+    
+    private func uploadAudioToFirebaseStorage(audioData: Data, messageId: String, duration: TimeInterval, to chatId: String, replyToMessage: Message?, replySenderName: String?) {
+        let storageRef = storage.reference().child("chat_audio/\(messageId).m4a")
+        storageRef.putData(audioData, metadata: nil) { [weak self] _, error in
+            if let error = error {
+                print("Firebase audio storage error: \(error)")
+                return
+            }
+            storageRef.downloadURL { url, _ in
+                if let audioUrl = url?.absoluteString {
+                    self?.saveAudioMessageToFirestore(messageId: messageId, audioUrl: audioUrl, duration: duration, to: chatId, replyToMessage: replyToMessage, replySenderName: replySenderName)
+                }
+            }
         }
     }
     

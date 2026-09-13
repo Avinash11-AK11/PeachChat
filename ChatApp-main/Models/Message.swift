@@ -17,10 +17,13 @@ struct Message: Identifiable, Codable, Hashable {
     var messageType: MessageType
     var status: MessageStatus
     var replyToMessageId: String?
+    var replyToText: String?
+    var replyToSenderName: String?
     var mediaUrl: String?
     var mediaType: MediaType?
     var reaction: String?
     var isDeleted: Bool?
+    var audioDuration: Double?
     
     enum MessageType: String, Codable, CaseIterable {
         case text = "text"
@@ -45,7 +48,7 @@ struct Message: Identifiable, Codable, Hashable {
         case file = "file"
     }
     
-    init(id: String, text: String, senderId: String, chatId: String, timestamp: Date = Date(), messageType: MessageType = .text, status: MessageStatus = .sent, reaction: String? = nil, isDeleted: Bool? = false) {
+    init(id: String, text: String, senderId: String, chatId: String, timestamp: Date = Date(), messageType: MessageType = .text, status: MessageStatus = .sent, reaction: String? = nil, isDeleted: Bool? = false, replyToMessageId: String? = nil, replyToText: String? = nil, replyToSenderName: String? = nil, mediaUrl: String? = nil, audioDuration: Double? = nil) {
         self.id = id
         self.text = text
         self.senderId = senderId
@@ -53,11 +56,14 @@ struct Message: Identifiable, Codable, Hashable {
         self.timestamp = timestamp
         self.messageType = messageType
         self.status = status
-        self.replyToMessageId = nil
-        self.mediaUrl = nil
-        self.mediaType = nil
         self.reaction = reaction
         self.isDeleted = isDeleted
+        self.replyToMessageId = replyToMessageId
+        self.replyToText = replyToText
+        self.replyToSenderName = replyToSenderName
+        self.mediaUrl = mediaUrl
+        self.mediaType = messageType == .image ? .image : (messageType == .audio ? .audio : nil)
+        self.audioDuration = audioDuration
     }
     
     // Computed property for backward compatibility
@@ -76,10 +82,13 @@ struct Message: Identifiable, Codable, Hashable {
         messageType = try container.decodeIfPresent(MessageType.self, forKey: .messageType) ?? .text
         status = try container.decodeIfPresent(MessageStatus.self, forKey: .status) ?? .sent
         replyToMessageId = try container.decodeIfPresent(String.self, forKey: .replyToMessageId)
+        replyToText = try container.decodeIfPresent(String.self, forKey: .replyToText)
+        replyToSenderName = try container.decodeIfPresent(String.self, forKey: .replyToSenderName)
         mediaUrl = try container.decodeIfPresent(String.self, forKey: .mediaUrl)
         mediaType = try container.decodeIfPresent(MediaType.self, forKey: .mediaType)
         reaction = try container.decodeIfPresent(String.self, forKey: .reaction)
         isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        audioDuration = try container.decodeIfPresent(Double.self, forKey: .audioDuration)
         
         // Handle timestamp decoding flexibly
         if let timestampVal = try? container.decode(Double.self, forKey: .timestamp) {
@@ -94,6 +103,6 @@ struct Message: Identifiable, Codable, Hashable {
     
     enum CodingKeys: String, CodingKey {
         case id, text, senderId, chatId, timestamp, messageType, status
-        case replyToMessageId, mediaUrl, mediaType, reaction, isDeleted
+        case replyToMessageId, replyToText, replyToSenderName, mediaUrl, mediaType, reaction, isDeleted, audioDuration
     }
 }

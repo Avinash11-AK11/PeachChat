@@ -118,6 +118,88 @@ class CloudinaryManager {
         }.resume()
     }
     
+    /// Uploads audio Data to Cloudinary
+    func uploadAudio(_ audioData: Data, folder: String = "chat_audio", completion: @escaping (Result<String, Error>) -> Void) {
+        guard !cloudName.isEmpty else {
+            completion(.failure(NSError(domain: "CloudinaryManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Cloudinary cloudName is not configured."])))
+            return
+        }
+        
+        let urlString = "https://api.cloudinary.com/v1_1/\(cloudName)/video/upload"
+        guard let url = URL(string: urlString) else {
+            completion(.failure(NSError(domain: "CloudinaryManager", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid Cloudinary endpoint URL."])))
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        var body = Data()
+        
+        if !uploadPreset.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"upload_preset\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(uploadPreset)\r\n".data(using: .utf8)!)
+        }
+        
+        if !apiKey.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"api_key\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(apiKey)\r\n".data(using: .utf8)!)
+        }
+        
+        if !folder.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"folder\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(folder)\r\n".data(using: .utf8)!)
+        }
+        
+        let filename = "voice_\(UUID().uuidString).m4a"
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
+        body.append(audioData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            guard let data = data else {
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(domain: "CloudinaryManager", code: -4, userInfo: [NSLocalizedDescriptionKey: "Empty response from Cloudinary."])))
+                }
+                return
+            }
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let secureUrl = json["secure_url"] as? String {
+                        DispatchQueue.main.async { completion(.success(secureUrl)) }
+                    } else if let errorDict = json["error"] as? [String: Any],
+                              let msg = errorDict["message"] as? String {
+                        DispatchQueue.main.async {
+                            completion(.failure(NSError(domain: "CloudinaryManager", code: -5, userInfo: [NSLocalizedDescriptionKey: "Cloudinary: \(msg)"])))
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            completion(.failure(NSError(domain: "CloudinaryManager", code: -6, userInfo: [NSLocalizedDescriptionKey: "Unexpected Cloudinary response format."])))
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }.resume()
+    }
+    
     /// Modern async/await image upload to Cloudinary
     func uploadImageAsync(_ image: UIImage, folder: String = "chat_images") async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in

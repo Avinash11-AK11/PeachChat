@@ -309,12 +309,16 @@ struct ChatRowView: View {
     }
 }
 
-// MARK: - New Chat View
+// MARK: - New Chat & Group View
 
 struct NewChatView: View {
     @ObservedObject var chatManager: ChatManager
     @Environment(\.dismiss) private var dismiss
+    
+    @State private var selectedTab = 0 // 0: Direct Chat, 1: New Group
     @State private var searchText = ""
+    @State private var groupName = ""
+    @State private var selectedUserIds: Set<String> = []
     @State private var users: [User] = []
     @State private var isLoading = false
     
@@ -332,12 +336,39 @@ struct NewChatView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
+                // Segmented Picker (Direct vs Group)
+                Picker("Chat Type", selection: $selectedTab) {
+                    Text("Direct Chat").tag(0)
+                    Text("New Group").tag(1)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                
+                // Group Name Input (only for New Group tab)
+                if selectedTab == 1 {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.3.fill")
+                            .foregroundColor(Color("Peach"))
+                            .font(.system(size: 16))
+                        
+                        TextField("Group Name (e.g. iOS Engineers)...", text: $groupName)
+                            .textFieldStyle(PlainTextFieldStyle())
+                    }
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                }
+                
                 // Search bar
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
                     
-                    TextField("Search by name or email...", text: $searchText)
+                    TextField("Search users...", text: $searchText)
                         .textFieldStyle(PlainTextFieldStyle())
                     
                     if !searchText.isEmpty {
@@ -351,7 +382,7 @@ struct NewChatView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(12)
                 .padding(.horizontal)
-                .padding(.vertical, 8)
+                .padding(.vertical, 6)
                 
                 if isLoading {
                     Spacer()
@@ -374,74 +405,64 @@ struct NewChatView: View {
                     }
                     Spacer()
                 } else {
-                    List(filteredUsers) { user in
-                        Button(action: {
-                            chatManager.createChat(with: user.id)
-                            dismiss()
-                        }) {
-                            HStack(spacing: 12) {
-                                // User avatar
-                                ZStack {
-                                    if let imageUrl = user.profileImageUrl, !imageUrl.isEmpty {
-                                        AsyncImage(url: URL(string: imageUrl)) { img in
-                                            img.resizable().aspectRatio(contentMode: .fill)
-                                        } placeholder: {
-                                            Circle().fill(Color("Peach").opacity(0.3))
-                                        }
-                                        .frame(width: 44, height: 44)
-                                        .clipShape(Circle())
-                                    } else {
-                                        Circle()
-                                            .fill(Color("Peach"))
-                                            .frame(width: 44, height: 44)
-                                            .overlay(
-                                                Text(String(user.username.prefix(1)).uppercased())
-                                                    .font(.system(size: 16, weight: .bold))
-                                                    .foregroundColor(.white)
-                                            )
-                                    }
-                                    
-                                    if user.isOnline {
-                                        Circle()
-                                            .fill(Color.green)
-                                            .frame(width: 11, height: 11)
-                                            .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
-                                            .offset(x: 15, y: 15)
-                                    }
+                    List {
+                        ForEach(filteredUsers) { user in
+                            if selectedTab == 0 {
+                                // 1-on-1 Direct Chat row
+                                Button(action: {
+                                    chatManager.createChat(with: user.id)
+                                    dismiss()
+                                }) {
+                                    userRowContent(for: user, isSelected: false, isMultiSelect: false)
                                 }
-                                
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(user.username)
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(.primary)
-                                    
-                                    if let bio = user.bio, !bio.isEmpty {
-                                        Text(bio)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
+                                .buttonStyle(PlainButtonStyle())
+                            } else {
+                                // Multi-select Group Chat row
+                                Button(action: {
+                                    if selectedUserIds.contains(user.id) {
+                                        selectedUserIds.remove(user.id)
                                     } else {
-                                        Text(user.email)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
+                                        selectedUserIds.insert(user.id)
                                     }
+                                }) {
+                                    userRowContent(for: user, isSelected: selectedUserIds.contains(user.id), isMultiSelect: true)
                                 }
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                .buttonStyle(PlainButtonStyle())
                             }
-                            .padding(.vertical, 4)
                         }
-                        .buttonStyle(PlainButtonStyle())
                     }
                     .listStyle(PlainListStyle())
                 }
+                
+                // Bottom Action for Group Creation
+                if selectedTab == 1 {
+                    VStack(spacing: 8) {
+                        Divider()
+                        HStack {
+                            Text("\(selectedUserIds.count) member\(selectedUserIds.count == 1 ? "" : "s") selected")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            Button(action: createGroup) {
+                                Text("Create Group")
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedUserIds.isEmpty ? Color.gray.opacity(0.5) : Color("Peach"))
+                                    .clipShape(Capsule())
+                            }
+                            .disabled(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedUserIds.isEmpty)
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 6)
+                    }
+                    .background(Color(.secondarySystemBackground))
+                }
             }
-            .navigationTitle("New Conversation")
+            .navigationTitle(selectedTab == 0 ? "New Direct Chat" : "Create Group Chat")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -454,6 +475,81 @@ struct NewChatView: View {
         .onAppear {
             loadUsers()
         }
+    }
+    
+    private func userRowContent(for user: User, isSelected: Bool, isMultiSelect: Bool) -> some View {
+        HStack(spacing: 12) {
+            if isMultiSelect {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isSelected ? Color("Peach") : .secondary)
+                    .font(.system(size: 20))
+            }
+            
+            // User avatar
+            ZStack {
+                if let imageUrl = user.profileImageUrl, !imageUrl.isEmpty {
+                    AsyncImage(url: URL(string: imageUrl)) { img in
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Circle().fill(Color("Peach").opacity(0.3))
+                    }
+                    .frame(width: 44, height: 44)
+                    .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Color("Peach"))
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Text(String(user.username.prefix(1)).uppercased())
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                }
+                
+                if user.isOnline {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 11, height: 11)
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
+                        .offset(x: 15, y: 15)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(user.username)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.primary)
+                
+                if let bio = user.bio, !bio.isEmpty {
+                    Text(bio)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text(user.email)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            
+            Spacer()
+            
+            if !isMultiSelect {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    private func createGroup() {
+        let trimmedName = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, !selectedUserIds.isEmpty else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        chatManager.createGroupChat(name: trimmedName, participantIds: Array(selectedUserIds))
+        dismiss()
     }
     
     private func loadUsers() {
@@ -480,7 +576,7 @@ struct NewChatView: View {
                         var user = try JSONDecoder().decode(User.self, from: jsonData)
                         user.id = document.documentID
                         
-                        // Exclude current logged in user from new chat list
+                        // Exclude current logged in user from list
                         if user.id == self.chatManager.currentUserId {
                             return nil
                         }

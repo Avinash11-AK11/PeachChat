@@ -1,0 +1,43 @@
+name: iOS Build & Test CI
+
+# Author: Avinash Chavda
+# Project: PeachChat - Real-Time iOS Messenger
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build & Verify iOS App
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode Version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer || true
+          xcodebuild -version
+
+      - name: Cache SPM Packages
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved', 'ChatApp-main.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Build PeachChat
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ChatApp-main.xcodeproj \
+            -scheme ChatApp-main \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            clean build
