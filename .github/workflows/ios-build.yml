@@ -1,7 +1,7 @@
 name: iOS Build & Test CI
 
 # Author: Avinash Chavda
-# Project: PeachChat - Real-Time iOS Messenger
+# Project: PeachChat - Real-Time iOS Messaging Application
 
 on:
   push:
@@ -18,16 +18,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode Version
+      - name: Select Xcode 16
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer || true
+          # The project format requires Xcode 16+ (objectVersion 77)
+          XCODE_APP=$(ls -d /Applications/Xcode_16*.app /Applications/Xcode.app 2>/dev/null | head -n 1)
+          if [ -n "$XCODE_APP" ]; then
+            echo "Selecting $XCODE_APP"
+            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          fi
           xcodebuild -version
 
       - name: Cache SPM Packages
         uses: actions/cache@v4
         with:
           path: .build
-          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved', 'ChatApp-main.xcodeproj/project.pbxproj') }}
+          key: ${{ runner.os }}-spm-${{ hashFiles('ChatApp-main.xcodeproj/project.pbxproj') }}
           restore-keys: |
             ${{ runner.os }}-spm-
 
