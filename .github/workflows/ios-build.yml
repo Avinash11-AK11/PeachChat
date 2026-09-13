@@ -12,31 +12,34 @@ on:
 jobs:
   build:
     name: Build & Verify iOS App
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: Configure Xcode 16
         run: |
-          # The project format requires Xcode 16+ (objectVersion 77)
-          XCODE_APP=$(ls -d /Applications/Xcode_16*.app /Applications/Xcode.app 2>/dev/null | head -n 1)
-          if [ -n "$XCODE_APP" ]; then
-            echo "Selecting $XCODE_APP"
-            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          echo "Available Xcode installations:"
+          ls -d /Applications/Xcode* || true
+          
+          if [ -d "/Applications/Xcode_16.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
           fi
+          
           xcodebuild -version
 
-      - name: Cache SPM Packages
-        uses: actions/cache@v4
-        with:
-          path: .build
-          key: ${{ runner.os }}-spm-${{ hashFiles('ChatApp-main.xcodeproj/project.pbxproj') }}
-          restore-keys: |
-            ${{ runner.os }}-spm-
+      - name: Resolve Swift Packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project ChatApp-main.xcodeproj \
+            -scheme ChatApp-main
 
-      - name: Build PeachChat
+      - name: Build PeachChat (iOS Simulator)
         run: |
           set -o pipefail
           xcodebuild \
@@ -45,4 +48,4 @@ jobs:
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            clean build
+            build
